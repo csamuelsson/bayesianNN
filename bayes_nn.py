@@ -111,34 +111,39 @@ def main(_):
   # INFERENCE
   with tf.variable_scope("posterior"):
     with tf.variable_scope("qW_0"):
-      loc = tf.get_variable("loc", [FLAGS.D, 10])
-      scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.D, 10]))
-      qW_0 = Normal(loc=loc, scale=scale)
-    with tf.variable_scope("qW_1"):
-      loc = tf.get_variable("loc", [10, 10])
-      scale = tf.nn.softplus(tf.get_variable("scale", [10, 10]))
-      qW_1 = Normal(loc=loc, scale=scale)
-    with tf.variable_scope("qW_2"):
-      loc = tf.get_variable("loc", [10, 1])
-      scale = tf.nn.softplus(tf.get_variable("scale", [10, 1]))
-      qW_2 = Normal(loc=loc, scale=scale)
+        loc = tf.get_variable("loc", [FLAGS.D, FLAGS.hidden_layers_dim])
+        scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.D, FLAGS.hidden_layers_dim]))
+        qW_0 = Normal(loc=loc, scale=scale)
     with tf.variable_scope("qb_0"):
-      loc = tf.get_variable("loc", [10])
-      scale = tf.nn.softplus(tf.get_variable("scale", [10]))
-      qb_0 = Normal(loc=loc, scale=scale)
-    with tf.variable_scope("qb_1"):
-      loc = tf.get_variable("loc", [10])
-      scale = tf.nn.softplus(tf.get_variable("scale", [10]))
-      qb_1 = Normal(loc=loc, scale=scale)
-    with tf.variable_scope("qb_2"):
-      loc = tf.get_variable("loc", [1])
-      scale = tf.nn.softplus(tf.get_variable("scale", [1]))
-      qb_2 = Normal(loc=loc, scale=scale)
+        loc = tf.get_variable("loc", [FLAGS.hidden_layers_dim])
+        scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.hidden_layers_dim]))
+        qb_0 = Normal(loc=loc, scale=scale)
 
-  inference = ed.ReparameterizationKLqp({W_0: qW_0, b_0: qb_0,
+    for i in range(1, FLAGS.num_hidden_layers):
+        with tf.variable_scope("qW_" + str(i)):
+            loc = tf.get_variable("loc", [FLAGS.hidden_layers_dim, FLAGS.hidden_layers_dim])
+            scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.hidden_layers_dim, FLAGS.hidden_layers_dim]))
+            tf.get_variable(Normal(loc=loc, scale=scale), name="qW_"+str(i))
+        with tf.variable_scope("qb_" + str(i)):
+            loc = tf.get_variable("loc", [FLAGS.hidden_layers_dim])
+            scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.hidden_layers_dim]))
+            tf.get_variable(Normal(loc=loc, scale=scale), name="qb_"+str(i))
+
+    with tf.variable_scope("qW_" + str(FLAGS.hidden_layers_dim)):
+        loc = tf.get_variable("loc", [FLAGS.hidden_layers_dim, 1])
+        scale = tf.nn.softplus(tf.get_variable("scale", [FLAGS.hidden_layers_dim, 1]))
+        tf.get_variable(Normal(loc=loc, scale=scale), name="qW_"+str(FLAGS.hidden_layers_dim))
+    with tf.variable_scope("qb_" + str(FLAGS.hidden_layers_dim):
+        loc = tf.get_variable("loc", [1])
+        scale = tf.nn.softplus(tf.get_variable("scale", [1]))
+        tf.get_variable(Normal(loc=loc, scale=scale), name="gb_"+str(FLAGS.hidden_layers_dim))
+
+inference = ed.ReparameterizationKLqp({W_0: qW_0, b_0: qb_0,
                        W_1: qW_1, b_1: qb_1,
                        W_2: qW_2, b_2: qb_2}, data={X: x_train, y: y_train})
-  inference.run(logdir='log')
+
+# log to tensorboard
+inference.run(logdir='log')
 
 if __name__ == "__main__":
   tf.app.run()
