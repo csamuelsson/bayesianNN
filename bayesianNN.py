@@ -15,7 +15,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.contrib.learn.python.learn.datasets import mnist
+# importing mnist dataset for demo purpose
+from tensorflow.contrib.learn.python.learn.datasets import mnist # remove
 
 # What's happening here? Do we need to care?
 # TODO(b/78137893): Integration tests currently fail with seaborn imports.
@@ -59,6 +60,10 @@ flags.DEFINE_integer("viz_epochs",
 flags.DEFINE_integer("num_monte_carlo",
                      default=100,
                      help="Network draws to compute predictive probabilities.")
+
+flags.DEFINE_float("prior_std",
+                   default=1.0,
+                   help="Standard deviation for the prior distribution over the weights")
 
 FLAGS = flags.FLAGS
 FLAGS.learning_rate = 0.5
@@ -146,7 +151,9 @@ def build_input_pipeline(mnist_data, batch_size, heldout_size):
   # Build an iterator over training batches.
   training_dataset = tf.data.Dataset.from_tensor_slices(
       (mnist_data.train.images, np.int32(mnist_data.train.labels)))
-  training_batches = training_dataset.repeat().batch(batch_size)
+    # Shuffle the dataset (note shuffle argument larger than training size)
+    # and form batches of size `batchsize`
+  training_batches = training_dataset.shuffle(2000).repeat().batch(batch_size)
   training_iterator = training_batches.make_one_shot_iterator()
 
   # Build a iterator over the heldout set with batch_size=heldout_size,
@@ -199,11 +206,18 @@ def main(argv):
       neural_net = tf.keras.Sequential()
       for units in FLAGS.layer_sizes:
         layer = tfp.layers.DenseReparameterization(
-            units,
-            activation=FLAGS.activation)
+            units=units,
+            activation=FLAGS.activation,
+            trainable=True
+            )
         neural_net.add(layer)
-      neural_net.add(tfp.layers.DenseReparameterization(10)) # change to 1
+      neural_net.add(tfp.layers.DenseReparameterization(
+        units=10, # change to 1
+        activation=None,
+        trainable=True
+        ))
       logits = neural_net(images) # remove
+      print("SUCCESS")
       # predictions = neural_net(images)
       labels_distribution = tfd.Categorical(logits=logits) # remove
 
@@ -217,7 +231,7 @@ def main(argv):
         qmeans.append(q.mean())
         qstds.append(q.stddev())
 
-      # labels_distribution = tfd.MultiVariateNormalDiag(loc=qmeans, scale=qstds)
+      # labels_distribution = tfd.MultiVariateNormalDiag(loc=qmeans, scale=qstds) does not work??
 
 
     # Compute the -ELBO as the loss, averaged over the batch size.
