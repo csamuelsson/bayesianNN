@@ -4,13 +4,18 @@ from __future__ import print_function
 
 import os
 
+# only for debugging purposes
+import sys
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning) # doesn't work?
+
 # Dependencies
 from absl import flags
 # Local errors with matplotlib, comment out when debugged
-# import matplotlib
-# matplotlib.use("Agg")
-# from matplotlib import figure  # pylint: disable=g-import-not-at-top
-# from matplotlib.backends import backend_agg
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import figure  # pylint: disable=g-import-not-at-top
+from matplotlib.backends import backend_agg
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -27,7 +32,6 @@ except ImportError:
   HAS_SEABORN = False
 
 tfd = tf.contrib.distributions
-
 IMAGE_SHAPE = [28, 28]
 
 flags.DEFINE_float("learning_rate",
@@ -56,7 +60,11 @@ flags.DEFINE_string(
     help="Directory to put the model's fit.") # ?
 flags.DEFINE_integer("viz_epochs",
                      default=400,
-                     help="Frequency at which save visualizations.") # ?
+                     help="Frequency at which save visualizations.")
+flags.DEFINE_boolean("viz_enabled",
+                      default=True,
+                      help="Whether vizualisations should be generated or not")
+
 flags.DEFINE_integer("num_monte_carlo",
                      default=100,
                      help="Network draws to compute predictive probabilities.")
@@ -67,11 +75,9 @@ flags.DEFINE_float("prior_std",
 
 FLAGS = flags.FLAGS
 FLAGS.learning_rate = 0.5
-
-
-# check hardware
-from tensorflow.python.client import device_lib
-device_lib.list_local_devices()
+FLAGS.viz_epochs = 1000
+FLAGS.viz_enabled = False # set to false if we want to train the model faster
+FLAGS.max_epochs = 10000
 
 # ?
 def plot_weight_posteriors(names, qm_vals, qs_vals, fname):
@@ -208,20 +214,32 @@ def main(argv):
         layer = tfp.layers.DenseReparameterization(
             units=units,
             activation=FLAGS.activation,
-            trainable=True
+            trainable=True,
+            kernel_prior_fn=tfp.layers.default_multivariate_normal_fn, # NormalDiag with Xavier
+            kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
+            kernel_posterior_tensor_fn=lambda x: x.sample(),
+            bias_prior_fn=tfp.layers.default_multivariate_normal_fn, # NormalDiag with Xavier
+            bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
+            bias_posterior_tensor_fn=lambda x: x.sample()
             )
         neural_net.add(layer)
       neural_net.add(tfp.layers.DenseReparameterization(
         units=10, # change to 1
         activation=None,
-        trainable=True
+        trainable=True,
+        kernel_prior_fn=tfp.layers.default_multivariate_normal_fn, # NormalDiag with Xavier?
+        kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
+        kernel_posterior_tensor_fn=lambda x: x.sample(),
+        bias_prior_fn=tfp.layers.default_multivariate_normal_fn, # NormalDiag with Xavier?
+        bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
+        bias_posterior_tensor_fn=lambda x: x.sample()
         ))
       logits = neural_net(images) # remove
-      print("SUCCESS")
       # predictions = neural_net(images)
       labels_distribution = tfd.Categorical(logits=logits) # remove
 
       # Extract weight posterior statistics
+      # Should also do the same for the biases!
       names = []
       qmeans = []
       qstds = []
@@ -231,7 +249,8 @@ def main(argv):
         qmeans.append(q.mean())
         qstds.append(q.stddev())
 
-      # labels_distribution = tfd.MultiVariateNormalDiag(loc=qmeans, scale=qstds) does not work??
+      # weights_distribution = tfd.MultivariateNormalDiag(loc=qmeans, scale=qstds)
+
 
 
     # Compute the -ELBO as the loss, averaged over the batch size.
@@ -291,7 +310,7 @@ def main(argv):
 
           qm_vals, qs_vals = sess.run((qmeans, qstds)) # ?
 
-          if HAS_SEABORN:
+          if HAS_SEABORN & FLAGS.viz_enabled: 
             plot_weight_posteriors(names, qm_vals, qs_vals,
                                    fname=os.path.join(
                                        FLAGS.model_dir,
