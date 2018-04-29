@@ -4,9 +4,9 @@ import numpy as np
 data = pd.read_csv("variables.csv.txt", sep='\t')
 
 # last column is the response variable
-y = np.array(data[data.columns[-1]])
+y = np.array(data[data.columns[-1]], dtype='float32')
 # rest of the variables (except the first) are the features
-x = np.array(data[data.columns[1:-1]])
+x = np.array(data[data.columns[1:-1]], dtype='float32')
 
 # since x_6850 -> x_6908 has variance 0 they don't contribute to our mapping, therefore we remove them here
 x = x[0:len(x), 0:6849]
