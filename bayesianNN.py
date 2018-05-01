@@ -18,6 +18,8 @@ import tensorflow_probability as tfp
 import pandas as pd
 from flags import *
 from utils import *
+from sklearn.decomposition import PCA
+from sklearn.model_selection import KFold
 
 # importing mnist dataset for demo purpose
 from tensorflow.contrib.learn.python.learn.datasets import mnist # remove
@@ -41,14 +43,17 @@ except ImportError:
   HAS_SEABORN = False
 
 tfd = tf.contrib.distributions
-IMAGE_SHAPE = [28, 28]
+# IMAGE_SHAPE = [28, 28]
 
 # Tuning some of the hyperparameters manually:
 FLAGS = flags.FLAGS
-FLAGS.learning_rate = 0.01
+FLAGS.learning_rate = 0.1
 FLAGS.viz_epochs = 1000
 FLAGS.viz_enabled = False # set to false if we want to train the model faster
 FLAGS.max_epochs = 10000
+FLAGS.layer_sizes = ["100", "100"]
+FLAGS.batch_size = 99
+FLAGS.prior_std = 0.5
 
 train_percentage = 0.8
 
@@ -137,10 +142,8 @@ def build_input_pipeline(drug_data_path, batch_size,
     features = data["features"]
     labels = data["labels"]
 
-    assert not np.any(np.isnan(features))
-    assert not np.any(np.isnan(labels))
-
     # PCA (sklearn) and normalising
+    features = PCA(n_components=FLAGS.num_principal_components).fit_transform(features)
 
     # Splitting into training and validation sets
     train_range = int(train_percentage * len(x))
@@ -150,12 +153,16 @@ def build_input_pipeline(drug_data_path, batch_size,
     validation_features = features[train_range:]
     validation_labels = labels[train_range:]
 
+    # Z-normalising: (note with respect to training data)
+    training_features = (training_features - np.mean(training_features, axis=0))/np.std(training_features, axis=0)
+    validation_features = (validation_features - np.mean(training_features, axis=0))/np.std(training_features, axis=0)
+
   # Create the tf.Dataset object
   training_dataset = tf.data.Dataset.from_tensor_slices((training_features, training_labels))
 
   # Shuffle the dataset (note shuffle argument larger than training size)
   # and form batches of size `batch_size`
-  training_batches = training_dataset.shuffle(2000).repeat().batch(batch_size)
+  training_batches = training_dataset.shuffle(20000).repeat().batch(batch_size)
   training_iterator = training_batches.make_one_shot_iterator()
 
   # Build a iterator over the heldout set with batch_size=heldout_size,
@@ -215,7 +222,7 @@ def main(argv):
             # kernel_prior_fn=make_scale_mixture_prior_fn, # pls work
             kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
             kernel_posterior_tensor_fn=lambda x: x.sample(),
-            bias_prior_fn=tfp.layers.default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
+            bias_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
             bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
             bias_posterior_tensor_fn=lambda x: x.sample()
             )
