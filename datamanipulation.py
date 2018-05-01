@@ -16,6 +16,10 @@ with np.load('drug_data.npz') as data:
     x_new = data['features']
     y_new = data['labels']
 
+# Test for NaNs
+assert not np.any(np.isnan(x_new))
+assert not np.any(np.isnan(y_new))
+
 # Test of equalness in features
 for records in zip(x, x_new):
     for elem in zip(records[0], records[1]):
