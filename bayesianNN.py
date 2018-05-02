@@ -21,21 +21,7 @@ from utils import *
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 
-# importing mnist dataset for demo purpose
-from tensorflow.contrib.learn.python.learn.datasets import mnist # remove
-
-data = pd.read_csv("variables.csv.txt", sep='\t')
-
-# last column is the response variable
-y = np.array(data[data.columns[-1]])
-# rest of the variables (except the first) are the features
-x = np.array(data[data.columns[1:-1]])
-
-# since x_6850 -> x_6908 has variance 0 they don't contribute to our mapping, therefore we remove them here
-x = x[0:len(x), 0:6849]
-
-# What's happening here? Do we need to care?
-# TODO(b/78137893): Integration tests currently fail with seaborn imports.
+# Test if seaborn is installed (for visualizations)
 try:
   import seaborn as sns  # pylint: disable=g-import-not-at-top
   HAS_SEABORN = True
@@ -43,11 +29,10 @@ except ImportError:
   HAS_SEABORN = False
 
 tfd = tf.contrib.distributions
-# IMAGE_SHAPE = [28, 28]
 
 # Tuning some of the hyperparameters manually:
 FLAGS = flags.FLAGS
-FLAGS.learning_rate = 0.1
+FLAGS.learning_rate = 0.5
 FLAGS.viz_epochs = 1000
 FLAGS.viz_enabled = False # set to false if we want to train the model faster
 FLAGS.max_epochs = 10000
@@ -137,7 +122,6 @@ def build_input_pipeline(drug_data_path, batch_size,
     to reduce the dataset into.
   """
   # Build an iterator over training batches.
-  # Load the training data into two NumPy arrays, for example using `np.load()`.
   with np.load(drug_data_path) as data:
     features = data["features"]
     labels = data["labels"]
@@ -146,7 +130,7 @@ def build_input_pipeline(drug_data_path, batch_size,
     features = PCA(n_components=FLAGS.num_principal_components).fit_transform(features)
 
     # Splitting into training and validation sets
-    train_range = int(train_percentage * len(x))
+    train_range = int(train_percentage * len(features))
 
     training_features = features[:train_range]
     training_labels = labels[:train_range]
@@ -160,7 +144,7 @@ def build_input_pipeline(drug_data_path, batch_size,
   # Create the tf.Dataset object
   training_dataset = tf.data.Dataset.from_tensor_slices((training_features, training_labels))
 
-  # Shuffle the dataset (note shuffle argument larger than training size)
+  # Shuffle the dataset (note shuffle argument much larger than training size)
   # and form batches of size `batch_size`
   training_batches = training_dataset.shuffle(20000).repeat().batch(batch_size)
   training_iterator = training_batches.make_one_shot_iterator()
@@ -197,9 +181,6 @@ def main(argv):
     tf.gfile.DeleteRecursively(FLAGS.model_dir)
   tf.gfile.MakeDirs(FLAGS.model_dir)
 
-  # Load MNIST data
-  # mnist_data = mnist.read_data_sets(FLAGS.data_dir)
-
   # define the graph
   with tf.Graph().as_default():
     # what's happening here?
@@ -211,7 +192,7 @@ def main(argv):
     # Building the Bayesian Neural Network. 
     # We are here using the Gaussian Reparametrization Trick
     # to compute the stochastic gradients as described in the paper
-    with tf.name_scope("bayesian_neural_net", values=[features]): # values arg??
+    with tf.name_scope("bayesian_neural_net", values=[features]):
       neural_net = tf.keras.Sequential()
       for units in FLAGS.layer_sizes:
         layer = tfp.layers.DenseReparameterization(
@@ -238,13 +219,10 @@ def main(argv):
         bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
         bias_posterior_tensor_fn=lambda x: x.sample()
         ))
-      # logits = neural_net(images) # remove
       predictions = neural_net(features)
-      # labels_distribution = tfd.Categorical(logits=logits) # remove
       labels_distribution = tfd.Normal(loc=predictions, scale=[1.])
 
       # Extract weight posterior statistics
-      # Should also do the same for the biases!
       names = []
       qmeans = []
       qstds = []
@@ -266,7 +244,6 @@ def main(argv):
 
     # Build metrics for evaluation. Predictions are formed from a single forward
     # pass of the probabilistic layers. They are cheap but noisy predictions.
-    # predictions = tf.argmax(logits, axis=1) # remove since 1 dimensional output
     accuracy, accuracy_update_op = tf.metrics.mean_squared_error( # change to mean_squared_error
         labels=labels, predictions=predictions)
 
