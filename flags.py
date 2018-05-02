@@ -18,7 +18,7 @@ flags.DEFINE_string("activation",
     help="Activation function for all hidden layers.")
 
 flags.DEFINE_integer("batch_size",
-    default=128,
+    default=44,
     help="Batch size. Must divide evenly into dataset sizes.")
 
 flags.DEFINE_string("data_dir",
@@ -58,7 +58,6 @@ flags.DEFINE_float("prior_sigma_1",
 flags.DEFINE_float("prior_sigma_2",
     default=0.1,
     help="Standard deviation for the second gaussian in the scale mixture prior")
-
 
 flags.DEFINE_integer("num_principal_components",
     default=200,
