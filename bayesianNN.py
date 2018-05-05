@@ -15,6 +15,7 @@ from matplotlib.backends import backend_agg
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
+import json
 import pandas as pd
 from flags import *
 from utils import *
@@ -30,19 +31,20 @@ except ImportError:
 
 tfd = tf.contrib.distributions
 
-# Tuning some of the hyperparameters manually:
+
+# Import hyperparams from JSON file
+with open('hyperparams.json') as json_data:
+    hyperparams = json.load(json_data)
+    json_data.close()
+
+# Tuning program settings
 FLAGS = flags.FLAGS
-FLAGS.learning_rate = 0.5
-FLAGS.viz_epochs = 1000
+FLAGS.viz_epochs = 5000
 FLAGS.viz_enabled = False # set to false if we want to train the model faster
-FLAGS.max_epochs = 10000
-FLAGS.layer_sizes = ["100", "100"]
-FLAGS.batch_size = 99
-FLAGS.prior_std = 0.5
 
 train_percentage = 0.8
 
-'''def plot_weight_posteriors(names, qm_vals, qs_vals, fname):
+def plot_weight_posteriors(names, qm_vals, qs_vals, fname):
   """Save a PNG plot with histograms of weight means and stddevs.
   Args:
     names: A Python `iterable` of `str` variable names.
@@ -74,9 +76,9 @@ train_percentage = 0.8
 
   fig.tight_layout()
   canvas.print_figure(fname, format="png")
-  print("saved {}".format(fname))'''
+  print("saved {}".format(fname))
 
-'''def plot_heldout_prediction(input_vals, probs,
+def plot_heldout_prediction(input_vals, probs,
                             fname, n=10, title=""):
   """Save a PNG plot visualizing posterior uncertainty on heldout data.
   Args:
@@ -109,7 +111,7 @@ train_percentage = 0.8
   fig.tight_layout()
 
   canvas.print_figure(fname, format="png")
-  print("saved {}".format(fname))'''
+  print("saved {}".format(fname))
 
 
 def build_input_pipeline(drug_data_path, batch_size,
@@ -127,7 +129,7 @@ def build_input_pipeline(drug_data_path, batch_size,
     labels = data["labels"]
 
     # PCA (sklearn) and normalising
-    features = PCA(n_components=FLAGS.num_principal_components).fit_transform(features)
+    features = PCA(n_components=number_of_principal_components).fit_transform(features)
 
     # Splitting into training and validation sets
     train_range = int(train_percentage * len(features))
@@ -159,6 +161,7 @@ def build_input_pipeline(drug_data_path, batch_size,
 
   # Combine these into a feedable iterator that can switch between training
   # and validation inputs.
+  # Here should the minibatch increment be defined 
   handle = tf.placeholder(tf.string, shape=[])
   feedable_iterator = tf.data.Iterator.from_string_handle(
       handle, training_batches.output_types, training_batches.output_shapes)
@@ -168,11 +171,8 @@ def build_input_pipeline(drug_data_path, batch_size,
 
 
 def main(argv):
-  # creates list of the hidden layers where the i:th element represents the i:th hidden layers'
-  # dimensions, therefore the length of the list is the number of hidden layers in the model
-  FLAGS.layer_sizes = [int(units) for units in FLAGS.layer_sizes]
   # extract the activation function from the hyperopt spec as an attribute from the tf.nn module
-  FLAGS.activation = getattr(tf.nn, FLAGS.activation)
+  activation = getattr(tf.nn, hyperparams['network_params']['activation_function'])
 
   # Tracking whether we are overwriting an old log directory or not
   if tf.gfile.Exists(FLAGS.model_dir):
@@ -186,18 +186,18 @@ def main(argv):
     # what's happening here?
     (features, labels, handle,
      training_iterator, heldout_iterator, train_range) = build_input_pipeline(
-         "drug_data.npz", FLAGS.batch_size,
-         FLAGS.num_principal_components)
+         "drug_data.npz", hyperparams['optimizer_params']['batch_size'],
+         hyperparams['optimizer_params']['num_principal_components'])
 
     # Building the Bayesian Neural Network. 
     # We are here using the Gaussian Reparametrization Trick
     # to compute the stochastic gradients as described in the paper
     with tf.name_scope("bayesian_neural_net", values=[features]):
       neural_net = tf.keras.Sequential()
-      for units in FLAGS.layer_sizes:
+      for i in range(hyperparams['network_params']['num_hidden_layers']):
         layer = tfp.layers.DenseReparameterization(
-            units=units,
-            activation=FLAGS.activation,
+            units=hyperparams['network_params']['num_neurons_per_layer'],
+            activation=activation,
             trainable=True,
             kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
             # kernel_prior_fn=make_scale_mixture_prior_fn, # pls work
@@ -220,7 +220,7 @@ def main(argv):
         bias_posterior_tensor_fn=lambda x: x.sample()
         ))
       predictions = neural_net(features)
-      labels_distribution = tfd.Normal(loc=predictions, scale=[1.])
+      labels_distribution = tfd.Normal(loc=predictions, scale=[3.0]) # change hyperparam
 
       # Extract weight posterior statistics
       names = []
@@ -237,19 +237,30 @@ def main(argv):
 
       # weights_distribution = tfd.MultivariateNormalDiag(loc=qmeans, scale=qstds)
 
+    # Compute (2^(M-i)/(2^M-1) where M is the mini-batch size, i current mini-batch index
+    # i = tf.placeholder(tf.float32, name="i")
+    # i = tf.Variable(1.0, tf.float32, name="i")
+    # numerator = tf.pow(2.0, tf.subtract(11.0, i))
+    # denominator = tf.subtract(tf.pow(2.0, 11.0), 1)
+    # pi = tf.divide(numerator, denominator)
+
+    #mprint(training_iterator._get_next_call_count)
+    
     # Compute the -ELBO as the loss, averaged over the batch size.
-    neg_log_likelihood = -tf.reduce_mean(labels_distribution.log_prob(labels))
-    kl = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) / train_range # mnist_data.train.num_examples
+    # neg_log_likelihood = -tf.reduce_mean(labels_distribution.log_prob(labels))
+    neg_log_likelihood = tf.reduce_mean(tf.squared_difference(predictions, labels))
+    # neg_log_likelihood = -tf.reduce_mean(tf.squared_difference(predictions, labels))
+    kl = sum(neural_net.losses) / train_range
     elbo_loss = kl + neg_log_likelihood
 
     # Build metrics for evaluation. Predictions are formed from a single forward
     # pass of the probabilistic layers. They are cheap but noisy predictions.
-    accuracy, accuracy_update_op = tf.metrics.mean_squared_error( # change to mean_squared_error
+    accuracy, accuracy_update_op = tf.metrics.mean_squared_error(
         labels=labels, predictions=predictions)
 
     with tf.name_scope("train"):
       # define optimizer - we are using (stochastic) gradient descent
-      opt = tf.train.GradientDescentOptimizer(learning_rate=FLAGS.learning_rate)
+      opt = tf.train.GradientDescentOptimizer(learning_rate=hyperparams['optimizer_params']['learning_rate'])
 
       # define that we want to minimize the loss (-ELBO)
       train_op = opt.minimize(elbo_loss)
@@ -259,26 +270,29 @@ def main(argv):
       sess.run(tf.global_variables_initializer())
       sess.run(tf.local_variables_initializer())
 
-      # Run the training loop. ?? what is happening from here
+      # Run the training loop
       train_handle = sess.run(training_iterator.string_handle())
       heldout_handle = sess.run(heldout_iterator.string_handle())
 
-      i = tf.Variable(0, name="batch_i")
-      increment_i = tf.assign_add(i, 1)
+      # i = tf.Variable(0, name="batch_i")
+      # increment_i = tf.assign_add(i, 1)
       
       # Run the epochs
-      for epoch in range(FLAGS.max_epochs):
+      for epoch in range(hyperparams['optimizer_params']['epochs']):
         _ = sess.run([train_op, accuracy_update_op],
                      feed_dict={handle: train_handle})
 
         if epoch % 100 == 0:
           loss_value, accuracy_value = sess.run(
-              [elbo_loss, accuracy], feed_dict={handle: train_handle})
-          print("Epoch: {:>3d} Loss: {:.3f} Accuracy: {:.3f}".format(
-              epoch, loss_value, accuracy_value))
+            [elbo_loss, accuracy], feed_dict={handle: train_handle})
+          loss_value_validation, accuracy_value_validation = sess.run(
+            [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
+          )
+          print("Epoch: {:>3d} Loss: [{:.3f}, {:.3f}] Accuracy: [{:.3f}, {:.3f}]".format(
+              epoch, loss_value, loss_value_validation, accuracy_value, accuracy_value_validation))
 
         # check if time to save vizualisations
-        '''if (epoch+1) % FLAGS.viz_epochs == 0:
+        '''if (epoch+1) % FLAGS.viz_epochs == 0 & False:
           # Compute log prob of heldout set by averaging draws from the model:
           # p(heldout | train) = int_model p(heldout|model) p(model|train)
           #                   ~= 1/n * sum_{i=1}^n p(heldout | model_i)
@@ -294,7 +308,7 @@ def main(argv):
                                                  label_vals.flatten()])) #?
           print(" ... Held-out nats: {:.3f}".format(heldout_lp))
 
-          qm_vals, qs_vals = sess.run((qmeans, qstds)) # ?
+          qm_vals, qs_vals = sess.run((qmeans, qstds)) # variational posterior parameters
 
           if HAS_SEABORN & FLAGS.viz_enabled: 
             plot_weight_posteriors(names, qm_vals, qs_vals,
