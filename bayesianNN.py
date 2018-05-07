@@ -201,23 +201,28 @@ def main(argv):
 
 # Define the hyperparametric space (some form of prior by specyfying range)
 fspace = {
-  'learning_rate': hp.uniform('learning_rate', 0.01, 0.02)
+  'learning_rate': hp.choice('learning_rate', [0.01, 0.02])
 }
 
 # Wrapper around the objective function, assigns the flag values from the trials
 def wrapper(params):
   print("CALLING WRAPPER")
   FLAGS.learning_rate = params['learning_rate']
+  #FLAGS._parse_flags()
   # FLAGS.num_hidden_layers = params[''] more to come...
-  test =  tf.app.run()
+  test = main(FLAGS)
   return test
 
-#trials = Trials()
-if __name__ == "__main__":
-  # FLAGS = flags.FLAGS
+def caller(argv):
   trials = Trials()
-  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=5, trials=trials)
+  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=2, trials=trials)
   print("Best:", best)
   print("Trials:")
   for trial in trials.trials:
     print(trial)
+
+
+#trials = Trials()
+if __name__ == "__main__":
+  tf.app.run(main=caller)
+  
