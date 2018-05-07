@@ -4,8 +4,6 @@ from __future__ import print_function
 
 # only for debugging purposes
 import sys
-import warnings
-warnings.filterwarnings("ignore") # doesn't work?
 
 # Dependencies
 import matplotlib
@@ -20,7 +18,7 @@ import pandas as pd
 from flags import *
 from utils import *
 from sklearn.decomposition import PCA
-from sklearn.model_selection import KFold
+from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
 
 # Test if seaborn is installed (for visualizations)
 try:
@@ -31,15 +29,10 @@ except ImportError:
 
 tfd = tf.contrib.distributions
 
-# Import hyperparams from JSON file
-with open('hyperparams.json') as json_data:
-    hyperparams = json.load(json_data)
-    json_data.close()
-
 # Tuning program settings
 FLAGS = flags.FLAGS
 
-train_percentage = 0.8
+TRAIN_PERCENTAGE = 0.8
 
 def build_input_pipeline(drug_data_path, batch_size,
                           number_of_principal_components):
@@ -59,7 +52,7 @@ def build_input_pipeline(drug_data_path, batch_size,
     features = PCA(n_components=number_of_principal_components).fit_transform(features)
 
     # Splitting into training and validation sets
-    train_range = int(train_percentage * len(features))
+    train_range = int(TRAIN_PERCENTAGE * len(features))
 
     training_features = features[:train_range]
     training_labels = labels[:train_range]
@@ -98,6 +91,11 @@ def build_input_pipeline(drug_data_path, batch_size,
 
 
 def main(argv):
+  # Extract hyperparams from JSON file
+  with open('hyperparams.json') as json_data:
+      hyperparams = json.load(json_data)
+      json_data.close()
+
   # extract the activation function from the hyperopt spec as an attribute from the tf.nn module
   activation = getattr(tf.nn, hyperparams['network_params']['activation_function'])
 
@@ -113,7 +111,7 @@ def main(argv):
     # what's happening here?
     (features, labels, handle,
      training_iterator, heldout_iterator, train_range) = build_input_pipeline(
-         "drug_data.npz", hyperparams['optimizer_params']['batch_size'],
+         "drug_data.npz", hyperparams['optimizer_params']['batch_size'], # hold constant
          hyperparams['optimizer_params']['num_principal_components'])
 
     # Building the Bayesian Neural Network. 
@@ -148,20 +146,6 @@ def main(argv):
         ))
       predictions = neural_net(features)
       labels_distribution = tfd.Normal(loc=predictions, scale=[5.0]) # change hyperparam
-
-      # Extract weight posterior statistics
-      # Currently not used
-      names = []
-      qmeans = []
-      qstds = []
-      for i, layer in enumerate(neural_net.layers):
-        q = layer.kernel_posterior
-        q_b = layer.bias_posterior
-        names.append("Layer {}".format(i))
-        qmeans.append(q.mean())
-        qmeans.append(q_b.mean())
-        qstds.append(q.stddev())
-        qstds.append(q_b.stddev())
     
     # Compute the -ELBO as the loss, averaged over the batch size.
     neg_log_likelihood = tf.reduce_mean(tf.squared_difference(predictions, labels))
@@ -190,18 +174,50 @@ def main(argv):
       heldout_handle = sess.run(heldout_iterator.string_handle())
       
       # Run the epochs
-      for epoch in range(hyperparams['optimizer_params']['epochs']):
+      # final_loss = None
+      for epoch in range(FLAGS.num_epochs):
         _ = sess.run([train_op, accuracy_update_op],
                      feed_dict={handle: train_handle})
 
-        if epoch % 100 == 0:
-          loss_value, accuracy_value = sess.run(
-            [elbo_loss, accuracy], feed_dict={handle: train_handle})
-          loss_value_validation, accuracy_value_validation = sess.run(
+        # Check if final epoch, if so return the validation loss for the last epoch             
+        if epoch == FLAGS.num_epochs-1:
+          final_loss, final_accuracy = sess.run(
             [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
           )
-          print("Epoch: {:>3d} Loss: [{:.3f}, {:.3f}] Accuracy: [{:.3f}, {:.3f}]".format(
-              epoch, loss_value, loss_value_validation, accuracy_value, accuracy_value_validation))
+      return {'loss':final_loss, 'status':STATUS_OK, 'accuracy':final_accuracy, 'test':'test'}
 
+
+      # should be logging this! in a history object
+      '''if epoch % 100 == 0:
+        loss_value, accuracy_value = sess.run(
+          [elbo_loss, accuracy], feed_dict={handle: train_handle})
+        loss_value_validation, accuracy_value_validation = sess.run(
+          [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
+        )
+        print("Epoch: {:>3d} Loss: [{:.3f}, {:.3f}] Accuracy: [{:.3f}, {:.3f}]".format(
+            epoch, loss_value, loss_value_validation, accuracy_value, accuracy_value_validation))'''
+
+# HYPERPARAMETER OPTIMIZATION
+
+# Define the hyperparametric space (some form of prior by specyfying range)
+fspace = {
+  'learning_rate': hp.uniform('learning_rate', 0.01, 0.02)
+}
+
+# Wrapper around the objective function, assigns the flag values from the trials
+def wrapper(params):
+  print("CALLING WRAPPER")
+  FLAGS.learning_rate = params['learning_rate']
+  # FLAGS.num_hidden_layers = params[''] more to come...
+  test =  tf.app.run()
+  return test
+
+#trials = Trials()
 if __name__ == "__main__":
-  tf.app.run()
+  # FLAGS = flags.FLAGS
+  trials = Trials()
+  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=5, trials=trials)
+  print("Best:", best)
+  print("Trials:")
+  for trial in trials.trials:
+    print(trial)
