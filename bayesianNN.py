@@ -31,7 +31,6 @@ except ImportError:
 
 tfd = tf.contrib.distributions
 
-
 # Import hyperparams from JSON file
 with open('hyperparams.json') as json_data:
     hyperparams = json.load(json_data)
@@ -39,8 +38,6 @@ with open('hyperparams.json') as json_data:
 
 # Tuning program settings
 FLAGS = flags.FLAGS
-FLAGS.viz_epochs = 5000
-FLAGS.viz_enabled = False # set to false if we want to train the model faster
 
 train_percentage = 0.8
 
