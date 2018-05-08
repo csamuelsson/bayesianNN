@@ -3,29 +3,23 @@ from __future__ import division
 from __future__ import print_function
 
 # only for debugging purposes
-import sys
+#import sys
 
 # Dependencies
-import matplotlib
-matplotlib.use("Agg")
-from matplotlib import figure  # pylint: disable=g-import-not-at-top
-from matplotlib.backends import backend_agg
+#import matplotlib
+#matplotlib.use("Agg")
+#from matplotlib import figure  # pylint: disable=g-import-not-at-top
+#from matplotlib.backends import backend_agg
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-import json
-import pandas as pd
+#import json
+import math
+#import pandas as pd
 from flags import *
 from utils import *
 from sklearn.decomposition import PCA
-from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
-
-# Test if seaborn is installed (for visualizations)
-try:
-  import seaborn as sns  # pylint: disable=g-import-not-at-top
-  HAS_SEABORN = True
-except ImportError:
-  HAS_SEABORN = False
+from hyperopt import fmin, tpe, hp, STATUS_OK, STATUS_FAIL, Trials
 
 tfd = tf.contrib.distributions
 
@@ -91,37 +85,24 @@ def build_input_pipeline(drug_data_path, batch_size,
 
 
 def main(argv):
-  # Extract hyperparams from JSON file
-  with open('hyperparams.json') as json_data:
-      hyperparams = json.load(json_data)
-      json_data.close()
-
   # extract the activation function from the hyperopt spec as an attribute from the tf.nn module
-  activation = getattr(tf.nn, hyperparams['network_params']['activation_function'])
-
-  # Tracking whether we are overwriting an old log directory or not
-  if tf.gfile.Exists(FLAGS.model_dir):
-    tf.logging.warning(
-        "Warning: deleting old log directory at {}".format(FLAGS.model_dir))
-    tf.gfile.DeleteRecursively(FLAGS.model_dir)
-  tf.gfile.MakeDirs(FLAGS.model_dir)
+  activation = getattr(tf.nn, FLAGS.activation_function)
 
   # define the graph
   with tf.Graph().as_default():
     # what's happening here?
     (features, labels, handle,
      training_iterator, heldout_iterator, train_range) = build_input_pipeline(
-         "drug_data.npz", hyperparams['optimizer_params']['batch_size'], # hold constant
-         hyperparams['optimizer_params']['num_principal_components'])
+         "drug_data.npz", FLAGS.batch_size, FLAGS.num_principal_components)
 
     # Building the Bayesian Neural Network. 
     # We are here using the Gaussian Reparametrization Trick
     # to compute the stochastic gradients as described in the paper
     with tf.name_scope("bayesian_neural_net", values=[features]):
       neural_net = tf.keras.Sequential()
-      for i in range(hyperparams['network_params']['num_hidden_layers']):
+      for i in range(FLAGS.num_hidden_layers):
         layer = tfp.layers.DenseReparameterization(
-            units=hyperparams['network_params']['num_neurons_per_layer'],
+            units=FLAGS.num_neurons_per_layer,
             activation=activation,
             trainable=True,
             kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
@@ -135,7 +116,7 @@ def main(argv):
         neural_net.add(layer)
       neural_net.add(tfp.layers.DenseReparameterization(
         units=1, # one dimensional output
-        activation=None, # since regression (outcome not)
+        activation=None, # since regression (outcome not bounded)
         trainable=True, # i.e subject to optimization
         kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
         kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
@@ -159,7 +140,7 @@ def main(argv):
 
     with tf.name_scope("train"):
       # define optimizer - we are using (stochastic) gradient descent
-      opt = tf.train.GradientDescentOptimizer(learning_rate=hyperparams['optimizer_params']['learning_rate'])
+      opt = tf.train.GradientDescentOptimizer(learning_rate=FLAGS.learning_rate)
 
       # define that we want to minimize the loss (-ELBO)
       train_op = opt.minimize(elbo_loss)
@@ -174,44 +155,50 @@ def main(argv):
       heldout_handle = sess.run(heldout_iterator.string_handle())
       
       # Run the epochs
-      # final_loss = None
       for epoch in range(FLAGS.num_epochs):
         _ = sess.run([train_op, accuracy_update_op],
                      feed_dict={handle: train_handle})
+        
+        if epoch % 100 == 0:
+          loss_value, accuracy_value = sess.run(
+            [elbo_loss, accuracy], feed_dict={handle: train_handle})
+          loss_value_validation, accuracy_value_validation = sess.run(
+            [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
+          )
+          print("Epoch: {:>3d} Loss: [{:.3f}, {:.3f}] Accuracy: [{:.3f}, {:.3f}]".format(
+              epoch, loss_value, loss_value_validation, accuracy_value, accuracy_value_validation))
 
         # Check if final epoch, if so return the validation loss for the last epoch             
         if epoch == FLAGS.num_epochs-1:
           final_loss, final_accuracy = sess.run(
             [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
           )
-      return {'loss':final_loss, 'status':STATUS_OK, 'accuracy':final_accuracy, 'test':'test'}
-
-
-      # should be logging this! in a history object
-      '''if epoch % 100 == 0:
-        loss_value, accuracy_value = sess.run(
-          [elbo_loss, accuracy], feed_dict={handle: train_handle})
-        loss_value_validation, accuracy_value_validation = sess.run(
-          [elbo_loss, accuracy], feed_dict={handle: heldout_handle}
-        )
-        print("Epoch: {:>3d} Loss: [{:.3f}, {:.3f}] Accuracy: [{:.3f}, {:.3f}]".format(
-            epoch, loss_value, loss_value_validation, accuracy_value, accuracy_value_validation))'''
+      if not math.isnan(final_loss):
+        return {'loss':final_loss, 'status':STATUS_OK, 'accuracy':final_accuracy, 'test':'test'}
+      else:
+        return {'loss':math.pow(10, 9), 'status':STATUS_FAIL} # cheap way of assigning a huge loss if the loss diverges
 
 # HYPERPARAMETER OPTIMIZATION
 
 # Define the hyperparametric space (some form of prior by specyfying range)
 fspace = {
-  'learning_rate': hp.choice('learning_rate', [0.01, 0.02])
+  'learning_rate': hp.choice('learning_rate', [0.01, 0.02]),
+  'num_hidden_layers': hp.uniform('num_hidden_layers', 1, 7+1),
+  'num_neurons_per_layer': hp.uniform('num_neurons_per_layer', 5, 200+1),
+  'activation_function': hp.choice('activation_function', ["sigmoid", "relu"]),
+  'num_principal_components': hp.uniform('num_principal_components', 20, 500+1)
 }
 
 # Wrapper around the objective function, assigns the flag values from the trials
 def wrapper(params):
-  print("CALLING WRAPPER")
   FLAGS.learning_rate = params['learning_rate']
-  #FLAGS._parse_flags()
-  # FLAGS.num_hidden_layers = params[''] more to come...
-  test = main(FLAGS)
-  return test
+  FLAGS.num_hidden_layers = int(params['num_hidden_layers'])
+  FLAGS.num_neurons_per_layer = int(params['num_neurons_per_layer'])
+  FLAGS.activation_function = params['activation_function']
+  FLAGS.num_principal_components = int(params['num_principal_components'])
+  FLAGS.batch_size = 44 # kept constant
+  FLAGS.num_epochs = 10000 # kept constant
+  return main(FLAGS)
 
 def caller(argv):
   trials = Trials()
@@ -225,4 +212,3 @@ def caller(argv):
 #trials = Trials()
 if __name__ == "__main__":
   tf.app.run(main=caller)
-  
