@@ -2,20 +2,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# only for debugging purposes
-#import sys
-
 # Dependencies
-#import matplotlib
-#matplotlib.use("Agg")
-#from matplotlib import figure  # pylint: disable=g-import-not-at-top
-#from matplotlib.backends import backend_agg
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-#import json
 import math
-#import pandas as pd
 from flags import *
 from utils import *
 from sklearn.decomposition import PCA
@@ -90,7 +81,6 @@ def main(argv):
 
   # define the graph
   with tf.Graph().as_default():
-    # what's happening here?
     (features, labels, handle,
      training_iterator, heldout_iterator, train_range) = build_input_pipeline(
          "drug_data.npz", FLAGS.batch_size, FLAGS.num_principal_components)
@@ -106,7 +96,6 @@ def main(argv):
             activation=activation,
             trainable=True,
             kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
-            # kernel_prior_fn=make_scale_mixture_prior_fn, # pls work
             kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
             kernel_posterior_tensor_fn=lambda x: x.sample(),
             bias_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
@@ -126,7 +115,6 @@ def main(argv):
         bias_posterior_tensor_fn=lambda x: x.sample()
         ))
       predictions = neural_net(features)
-      labels_distribution = tfd.Normal(loc=predictions, scale=[5.0]) # change hyperparam
     
     # Compute the -ELBO as the loss, averaged over the batch size.
     neg_log_likelihood = tf.reduce_mean(tf.squared_difference(predictions, labels))
