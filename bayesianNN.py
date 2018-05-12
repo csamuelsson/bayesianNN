@@ -90,7 +90,6 @@ def main(argv):
 
   # define the graph
   with tf.Graph().as_default():
-    # what's happening here?
     (features, labels, handle,
      training_iterator, heldout_iterator, train_range) = build_input_pipeline(
          "drug_data.npz", FLAGS.batch_size, FLAGS.num_principal_components)
@@ -202,7 +201,7 @@ def wrapper(params):
 
 def caller(argv):
   trials = Trials()
-  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=2, trials=trials)
+  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=1000, trials=trials)
   print("Best:", best)
   print("Trials:")
   for trial in trials.trials:
