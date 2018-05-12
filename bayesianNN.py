@@ -95,10 +95,10 @@ def main(argv):
             units=FLAGS.num_neurons_per_layer,
             activation=activation,
             trainable=True,
-            kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
+            kernel_prior_fn=default_multivariate_normal_fn, # NormalDiag
             kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
             kernel_posterior_tensor_fn=lambda x: x.sample(),
-            bias_prior_fn=default_multivariate_normal_fn, # NormalDiag with hyperopt sigma
+            bias_prior_fn=default_multivariate_normal_fn, # NormalDiag
             bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(), # softplus(sigma)
             bias_posterior_tensor_fn=lambda x: x.sample()
             )
