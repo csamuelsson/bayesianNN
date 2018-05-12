@@ -190,7 +190,7 @@ def wrapper(params):
 
 def caller(argv):
   trials = Trials()
-  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=2, trials=trials)
+  best = fmin(fn=wrapper, space=fspace, algo=tpe.suggest, max_evals=1000, trials=trials)
   print("Best:", best)
   print("Trials:")
   for trial in trials.trials:
