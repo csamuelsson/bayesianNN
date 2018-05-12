@@ -170,7 +170,7 @@ def main(argv):
 
 # Define the hyperparametric space (some form of prior by specyfying range)
 fspace = {
-  'learning_rate': hp.choice('learning_rate', [0.01, 0.02]),
+  'learning_rate': hp.uniform('learning_rate', [0.0001, 0.1]),
   'num_hidden_layers': hp.uniform('num_hidden_layers', 1, 7+1),
   'num_neurons_per_layer': hp.uniform('num_neurons_per_layer', 5, 200+1),
   'activation_function': hp.choice('activation_function', ["sigmoid", "relu"]),
