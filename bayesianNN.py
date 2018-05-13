@@ -118,7 +118,7 @@ def main(argv):
     
     # Compute the -ELBO as the loss, averaged over the batch size.
     neg_log_likelihood = tf.reduce_mean(tf.squared_difference(predictions, labels))
-    kl = sum(neural_net.losses) / train_range
+    kl = sum(neural_net.losses) / FLAGS.batch_size
     elbo_loss = kl + neg_log_likelihood
 
     # Build metrics for evaluation. Predictions are formed from a single forward
