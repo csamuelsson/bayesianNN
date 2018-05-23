@@ -185,7 +185,6 @@ def main(argv):
                               for _ in range(FLAGS.num_monte_carlo)])
 
         predictions = np.squeeze(predictions) # fix the dimensions into a flat matrix
-        print(type(predictions))
         credible_intervals = [] # will be a matrix with with lower- and upper bound as columns
         # loop over the columns and compute the empirical credible interval
         modes = []

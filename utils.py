@@ -5,11 +5,6 @@ import numpy as np
 import math
 import json
 
-# Import hyperparams from JSON file
-with open('hyperparams.json') as json_data:
-    hyperparams = json.load(json_data)
-    json_data.close()
-
 tfd = tf.contrib.distributions
 
 def default_multivariate_normal_fn(dtype, shape, name, trainable,
