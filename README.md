@@ -6,4 +6,4 @@ The repository is mainly structured as follows:\
 [Requirements](../blob/master/requirements.txt)\
 [Data pre-processing](../blob/master/datamanipulation.py)\
 [Hyperparameter optimisation](../blob/master/bayesianNN.py)\
-[Get metrics for the final model](../blob/master/finalmodel.py)\
+[Get metrics for the final model](../blob/master/finalmodel.py)
