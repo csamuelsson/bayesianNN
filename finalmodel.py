@@ -19,7 +19,7 @@ FLAGS.learning_rate = 0.09 # change
 FLAGS.num_hidden_layers = 7
 FLAGS.num_neurons_per_layer = 3
 FLAGS.activation_function = "sigmoid"
-FLAGS.num_principal_components = 50
+FLAGS.num_principal_components = 369
 FLAGS.batch_size = 44 # kept constant under hyperopt
 FLAGS.num_epochs = 10000 # kept constant under hyperopt
 
