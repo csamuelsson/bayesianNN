@@ -4,12 +4,12 @@ import os
 flags.DEFINE_string("data_dir",
     default=os.path.join(os.getenv("TEST_TMPDIR", "/tmp"),
         "bayesian_neural_network/data"),
-    help="Directory where data is stored (if using real data).") # ?
+    help="Directory where data is stored (if using real data).")
 
 flags.DEFINE_string("model_dir",
     default=os.path.join(os.getenv("TEST_TMPDIR", "/tmp"),
         "bayesian_neural_network/"),
-    help="Directory to put the model's fit.") # ?
+    help="Directory to put the model's fit.")
 
 flags.DEFINE_float("learning_rate",
     default=0.01,
@@ -40,7 +40,7 @@ flags.DEFINE_integer("batch_size",
     help="Batch size. Must divide evenly into dataset sizes.")
 
 flags.DEFINE_integer("num_monte_carlo",
-    default=100,
+    default=10000,
     help="Network draws to compute predictive probabilities.")
 
 

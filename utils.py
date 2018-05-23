@@ -2,6 +2,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
+import math
 import json
 
 # Import hyperparams from JSON file
@@ -27,6 +28,6 @@ def default_multivariate_normal_fn(dtype, shape, name, trainable,
     Multivariate standard `Normal` distribution.
   """
   del name, trainable, add_variable_fn   # unused
-  dist = tfd.Normal(loc=tf.zeros(shape, dtype), scale=dtype.as_numpy_dtype(hyperparams['prior_beliefs']['prior_distribution_std']))
+  dist = tfd.Normal(loc=tf.zeros(shape, dtype), scale=1.0)
   batch_ndims = tf.size(dist.batch_shape_tensor())
   return tfd.Independent(dist, reinterpreted_batch_ndims=batch_ndims)
